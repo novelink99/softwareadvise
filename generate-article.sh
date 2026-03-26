@@ -162,7 +162,7 @@ RESPONSE=$(curl -sf https://api.anthropic.com/v1/messages \
 HTML=$(python3 - <<PYEOF
 import json, sys
 
-response = json.loads("""$RESPONSE""".replace('"""', '"'))
+response = json.loads("""$RESPONSE""".replace('"""', '"'), strict=False)
 if 'content' not in response or not response['content']:
     sys.stderr.write('API error: ' + json.dumps(response) + '\n')
     sys.exit(1)
