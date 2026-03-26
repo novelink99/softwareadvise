@@ -139,47 +139,29 @@ Requirements:
 - Always frame advice for Singapore/Southeast Asia context: mention SGD pricing, GST 9%, CPF, local bank feeds (DBS, OCBC, UOB), MYR pricing where relevant
 - Output ONLY the raw HTML — no markdown fences, no explanation, nothing before <!DOCTYPE or after </html>"
 
-# JSON-encode the prompt safely
-PAYLOAD=$(python3 -c "
-import json, sys
-prompt = sys.stdin.read()
-payload = {
-    'model': 'claude-haiku-4-5-20251001',
-    'max_tokens': 4096,
-    'messages': [{'role': 'user', 'content': prompt}]
-}
-print(json.dumps(payload))
-" <<< "$PROMPT")
+# Build JSON payload safely using jq
+PAYLOAD=$(jq -n \
+  --arg model "claude-haiku-4-5-20251001" \
+  --arg content "$PROMPT" \
+  '{model: $model, max_tokens: 4096, messages: [{role: "user", content: $content}]}')
 
 echo "Calling Claude API..."
-RESPONSE=$(curl -sf https://api.anthropic.com/v1/messages \
+RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
   -H "x-api-key: ${ANTHROPIC_API_KEY}" \
   -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \
   -d "$PAYLOAD")
 
-# Extract and clean HTML from response
-HTML=$(python3 - <<PYEOF
-import json, sys
+# Extract content with jq
+HTML=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
 
-response = json.loads("""$RESPONSE""".replace('"""', '"'), strict=False)
-if 'content' not in response or not response['content']:
-    sys.stderr.write('API error: ' + json.dumps(response) + '\n')
-    sys.exit(1)
-
-text = response['content'][0]['text'].strip()
+if [ -z "$HTML" ]; then
+  echo "API error: $RESPONSE" >&2
+  exit 1
+fi
 
 # Strip accidental markdown fences
-if text.startswith('\`\`\`html'):
-    text = text[7:]
-elif text.startswith('\`\`\`'):
-    text = text[3:]
-if text.endswith('\`\`\`'):
-    text = text[:-3]
-
-print(text.strip())
-PYEOF
-)
+HTML=$(echo "$HTML" | sed 's/^```html[[:space:]]*//' | sed 's/^```[[:space:]]*//' | sed 's/[[:space:]]*```$//')
 
 echo "$HTML" > "$FILENAME"
 echo "Saved: $FILENAME"
